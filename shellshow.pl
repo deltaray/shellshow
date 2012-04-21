@@ -60,33 +60,30 @@ my @frames = ();
 my $frame = 0;
 
 
-for my $file (@ARGV) {
-    open my $fh, '<', $file;
-    my $thisline;
-LINE: while (<$fh>) {
-        chomp;
-        if ($. > $rows) {
-            last LINE;
-        }
-	    s/\t/    /g; # Convert tabs into 4 spaces.
-        my $thisline = substr($_, 0, $cols);
-        if (length > $cols) {
-		    $thisline = substr($thisline, $cols-1,1, "+"); # This does the pico/nano like behavior of showing that a line is overlength.
-        }
-        my $diff = $cols - length($thisline);
-        if ($diff) {
-            $thisline .= " " x $diff;
-        }
-        $frames[$frame][$.-1] = $thisline;
+while (<>) {
+    chomp;
+    s/\t/    /g; # Convert tabs into 4 spaces.
+    my $thisline = substr($_, 0, $cols);
+    if (length > $cols) {
+        $thisline = substr($thisline, $cols-1,1, "+"); # This does the pico/nano like behavior of showing that a line is overlength.
     }
-    if ($. <= $rows) {
-        my $thisline = " " x $cols;
-        for my $l ($. .. $rows) {
-            $frames[$frame][$l] = $thisline;
-        }
+    my $diff = $cols - length($thisline);
+    if ($diff) {
+        $thisline .= " " x $diff;
     }
-    $frame++;
-    close($fh);
+    $frames[$frame][$.-1] = $thisline;
+}
+continue {
+    if ($. + 1 > $rows or eof ARGV) {
+        if ($. <= $rows) {
+            my $thisline = " " x $cols;
+            for my $l ($. .. $rows) {
+                $frames[$frame][$l] = $thisline;
+            }
+        }
+        $frame++;
+        close ARGV; #reset $. and skip to next file
+    }
 }
 
 my $totalframes = scalar @frames;
