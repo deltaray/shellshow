@@ -63,10 +63,9 @@ my $frame = 0;
 for my $file (@ARGV) {
     open my $fh, '<', $file;
     my $thisline;
-    my $lineno = 0;
 LINE: while (<$fh>) {
         chomp($_);
-        if ($lineno > $rows - 1) {
+        if ($. > $rows) {
             last LINE;
         }
 	    $_ =~ s/\t/    /g; # Convert tabs into 4 spaces.
@@ -78,12 +77,11 @@ LINE: while (<$fh>) {
         if ($diff) {
             $thisline .= " " x $diff;
         }
-        $frames[$frame][$lineno] = $thisline;
-        $lineno++;
+        $frames[$frame][$.-1] = $thisline;
     }
-    if ($lineno <= $rows) {
+    if ($. <= $rows) {
         my $thisline = " " x $cols;
-        for my $l ($lineno .. $rows) {
+        for my $l ($. .. $rows) {
             $frames[$frame][$l] = $thisline;
         }
     }
