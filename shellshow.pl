@@ -24,6 +24,12 @@
 # You may contact the author at <deltaray@slugbug.org>
 
 use strict;
+use warnings;
+use autodie;
+
+#For debugging, change this to a valid pts and watch for warnings
+#open my $pts, '>>', '/dev/pts/6';
+#open STDERR, '>&', $pts;
 
 my $VERSION = 0.1;
 
@@ -55,7 +61,7 @@ my $frame = 0;
 
 
 for my $file (@ARGV) {
-    open(my $fh, $file);
+    open my $fh, '<', $file;
     my $thisline;
     my $lineno = 0;
 LINE: while (<$fh>) {
