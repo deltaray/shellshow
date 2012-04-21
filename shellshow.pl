@@ -64,13 +64,13 @@ for my $file (@ARGV) {
     open my $fh, '<', $file;
     my $thisline;
 LINE: while (<$fh>) {
-        chomp($_);
+        chomp;
         if ($. > $rows) {
             last LINE;
         }
-	    $_ =~ s/\t/    /g; # Convert tabs into 4 spaces.
+	    s/\t/    /g; # Convert tabs into 4 spaces.
         my $thisline = substr($_, 0, $cols);
-        if (length($_) > $cols) {
+        if (length > $cols) {
 		    $thisline = substr($thisline, $cols-1,1, "+"); # This does the pico/nano like behavior of showing that a line is overlength.
         }
         my $diff = $cols - length($thisline);
