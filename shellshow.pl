@@ -23,6 +23,8 @@
 #
 # You may contact the author at <deltaray@slugbug.org>
 
+use strict;
+
 my $VERSION = 0.1;
 
 $| = 1;
@@ -41,18 +43,18 @@ if (@ARGV < 2 || $ARGV[0] eq "-h" || $ARGV[0] eq "--help") {
 # A simple timing array to use for the slides to give them
 # a little acceleration.
 my @timing = ();
-for($i = 0; $i < $cols/2; $i++) {
-    $time = 0.1 / ($i + 1);
+for(my $i = 0; $i < $cols/2; $i++) {
+    my $time = 0.1 / ($i + 1);
     $timing[$i] = $time;
 }
 # Now make the other half of the timing array.
-for($i = $cols/2 - 1; $i >= 0; $i--) {
+for(my $i = $cols/2 - 1; $i >= 0; $i--) {
 #    print "pushing " . $timing[$i] . " onto the list.\n";
     push(@timing, $timing[$i]);
 }
 
 my @graydient = ();
-for ($i = 255; $i >= 232; $i--) { # Gray colors in the ansi color spectrum
+for (my $i = 255; $i >= 232; $i--) { # Gray colors in the ansi color spectrum
     push(@graydient, $i);
 }
 
@@ -60,7 +62,7 @@ my @frames = ();
 my $frame = 0;
 
 
-foreach $file (@ARGV) {
+for my $file (@ARGV) {
     open(my $fh, $file);
     my $thisline;
     my $lineno = 0;
@@ -95,7 +97,8 @@ my $totalframes = scalar @frames;
 
     print "\033[2J";
 #foreach $frameno (keys @frames) {
-$frameno = 0;
+my $frameno = 0;
+my $BSD_STYLE;
 while ($frameno < $totalframes && $frameno >= 0) {
     poscursor(1,1);
     displayframe(\@frames,$frameno,$cols,$rows);
@@ -107,7 +110,7 @@ while ($frameno < $totalframes && $frameno >= 0) {
     } else {
         system "stty", '-icanon', 'eol', "\001";
     }
-    $read = getc();
+    my $read = getc();
     if ($BSD_STYLE) {
         system "stty -cbreak </dev/tty >/dev/tty 2>&1";
     } else {
@@ -115,6 +118,7 @@ while ($frameno < $totalframes && $frameno >= 0) {
     }
 
     # Do the transition. Perl needs a case to store all the Pearls.
+    my ($oldframe, $newframe);
     if ($read eq "\n" or $read eq " ") { # Return or space to move forward.
         $oldframe = $frameno;
         $newframe = $frameno+1;
@@ -216,7 +220,7 @@ sub displayframe {
 
     my $line = "";
     poscursor(1, 1);
-    for ($y = 0; $y < $rows; $y++) {
+    for (my $y = 0; $y < $rows; $y++) {
         $line = substr($$framesref[$frame][$y], 0, $cols);
         if ($y + 1 == $rows) {
             print "$line"; # Don't put a newline on the last line.
@@ -230,19 +234,19 @@ sub displayframe {
 
 
 sub slideright {
-    $framesref = shift;
-    $oldframe = shift;
-    $newframe = shift;
-    $cols = shift;
-    $rows = shift;
-    $timingref = shift;
+    my $framesref = shift;
+    my $oldframe = shift;
+    my $newframe = shift;
+    my $cols = shift;
+    my $rows = shift;
+    my $timingref = shift;
 
     if (defined($$framesref[$newframe])) {
         my $leftline = "";
         my $rightline = "";
-        for ($x = 1; $x < $cols; $x++) {
+        for (my $x = 1; $x < $cols; $x++) {
             poscursor(1, 1);
-            for ($y = 0; $y < $rows; $y++) {
+            for (my $y = 0; $y < $rows; $y++) {
                 $leftline = substr($$framesref[$oldframe][$y], $x);
                 $rightline = substr($$framesref[$newframe][$y], 0, $x);
                 if ($y + 1 == $rows) {
@@ -257,19 +261,19 @@ sub slideright {
     return 1;
 }
 sub slideleft {
-    $framesref = shift;
-    $oldframe = shift;
-    $newframe = shift;
-    $cols = shift;
-    $rows = shift;
-    $timingref = shift;
+    my $framesref = shift;
+    my $oldframe = shift;
+    my $newframe = shift;
+    my $cols = shift;
+    my $rows = shift;
+    my $timingref = shift;
 
     if (defined($$framesref[$oldframe])) {
         my $leftline = "";
         my $rightline = "";
-        for ($x = $cols - 1; $x > 0; $x--) {
+        for (my $x = $cols - 1; $x > 0; $x--) {
             poscursor(1, 1);
-            for ($y = 0; $y < $rows; $y++) {
+            for (my $y = 0; $y < $rows; $y++) {
                 $leftline = substr($$framesref[$newframe][$y], $x);
                 $rightline = substr($$framesref[$oldframe][$y], 0, $x);
                 if ($y + 1 == $rows) {
@@ -286,25 +290,25 @@ sub slideleft {
 
 # These are too slow.
 sub slidelineright {
-    $framesref = shift;
-    $oldframe = shift;
-    $newframe = shift;
-    $cols = shift;
-    $rows = shift;
-    $timingref = shift;
+    my $framesref = shift;
+    my $oldframe = shift;
+    my $newframe = shift;
+    my $cols = shift;
+    my $rows = shift;
+    my $timingref = shift;
 
     if (defined($$framesref[$newframe])) {
         my $leftline = "";
         my $rightline = "";
-        for ($y = 0; $y < $rows; $y++) {
-            for ($x = 1; $x <= $cols; $x++) {
+        for (my $y = 0; $y < $rows; $y++) {
+            for (my $x = 1; $x <= $cols; $x++) {
                 poscursor(1,$y + 1);
                 $leftline = substr($$framesref[$oldframe][$y], $x);
                 $rightline = substr($$framesref[$newframe][$y], 0, $x);
                 print "$leftline$rightline"; # Don't put a newline on the last line.
                 select(undef,undef,undef, 0.001);
             }
-            unless ($y + 1 == rows) {
+            unless ($y + 1 == $rows) {
                 print "\n";
             }
             #select(undef,undef, undef, $$timingref[$y]);
@@ -314,25 +318,25 @@ sub slidelineright {
     return 1;
 }
 sub slidelineleft {
-    $framesref = shift;
-    $oldframe = shift;
-    $newframe = shift;
-    $cols = shift;
-    $rows = shift;
-    $timingref = shift;
+    my $framesref = shift;
+    my $oldframe = shift;
+    my $newframe = shift;
+    my $cols = shift;
+    my $rows = shift;
+    my $timingref = shift;
 
     if (defined($$framesref[$oldframe])) {
         my $leftline = "";
         my $rightline = "";
-        for ($y = 0; $y < $rows; $y++) {
-            for ($x = $cols; $x >= 0; $x--) {
+        for (my $y = 0; $y < $rows; $y++) {
+            for (my $x = $cols; $x >= 0; $x--) {
                 poscursor(1,$y + 1);
                 $leftline = substr($$framesref[$newframe][$y], $x);
                 $rightline = substr($$framesref[$oldframe][$y], 0, $x);
                 print "$leftline$rightline"; # Don't put a newline on the last line.
                 select(undef,undef,undef, 0.001);
             }
-            unless ($y + 1 == rows) {
+            unless ($y + 1 == $rows) {
                 print "\n";
             }
             #select(undef,undef, undef, $$timingref[$y]);
@@ -343,19 +347,19 @@ sub slidelineleft {
 }
 
 sub fadeoutfadein {
-    $framesref = shift;
-    $oldframe = shift;
-    $newframe = shift;
-    $cols = shift;
-    $rows = shift;
-    $graydientref = shift;
-    $wait = shift || 0.03;
+    my $framesref = shift;
+    my $oldframe = shift;
+    my $newframe = shift;
+    my $cols = shift;
+    my $rows = shift;
+    my $graydientref = shift;
+    my $wait = shift || 0.03;
 
     if (defined($$framesref[$newframe])) {
         foreach my $color (@$graydientref) {
             poscursor(1,1);
 
-            for ($y = 0; $y < $rows; $y++) {
+            for (my $y = 0; $y < $rows; $y++) {
                 print "\033[38;5;${color}m" . $$framesref[$oldframe][$y];
                 unless ($y + 1 == $rows) { 
                     print "\n";
@@ -366,7 +370,7 @@ sub fadeoutfadein {
         foreach my $color (reverse @$graydientref) {
             poscursor(1,1);
 
-            for ($y = 0; $y < $rows; $y++) {
+            for (my $y = 0; $y < $rows; $y++) {
                 print "\033[38;5;${color}m" . $$framesref[$newframe][$y];
                 unless ($y + 1 == $rows) { 
                     print "\n";
