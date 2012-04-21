@@ -42,21 +42,13 @@ if (@ARGV < 2 || $ARGV[0] eq "-h" || $ARGV[0] eq "--help") {
 
 # A simple timing array to use for the slides to give them
 # a little acceleration.
-my @timing = ();
-for(my $i = 0; $i < $cols/2; $i++) {
-    my $time = 0.1 / ($i + 1);
-    $timing[$i] = $time;
-}
-# Now make the other half of the timing array.
-for(my $i = $cols/2 - 1; $i >= 0; $i--) {
-#    print "pushing " . $timing[$i] . " onto the list.\n";
-    push(@timing, $timing[$i]);
-}
+my @timing = map { 0.1 / ($_ + 1) } (0 .. ($cols/2));
 
-my @graydient = ();
-for (my $i = 255; $i >= 232; $i--) { # Gray colors in the ansi color spectrum
-    push(@graydient, $i);
-}
+# Now make the other half of the timing array.
+push @timing, reverse @timing[0..$#timing-1];
+
+# Gray colors in the ansi color spectrum
+my @graydient = reverse (232 .. 255);
 
 my @frames = ();
 my $frame = 0;
@@ -85,8 +77,8 @@ LINE: while (<$fh>) {
     }
     if ($lineno <= $rows) {
         my $thisline = " " x $cols;
-        foreach ($lineno; $lineno <= $rows; $lineno++) {
-            $frames[$frame][$lineno] = $thisline;
+        for my $l ($lineno .. $rows) {
+            $frames[$frame][$l] = $thisline;
         }
     }
     $frame++;
@@ -220,7 +212,7 @@ sub displayframe {
 
     my $line = "";
     poscursor(1, 1);
-    for (my $y = 0; $y < $rows; $y++) {
+    for my $y (0 .. $rows-1) {
         $line = substr($$framesref[$frame][$y], 0, $cols);
         if ($y + 1 == $rows) {
             print "$line"; # Don't put a newline on the last line.
@@ -244,9 +236,9 @@ sub slideright {
     if (defined($$framesref[$newframe])) {
         my $leftline = "";
         my $rightline = "";
-        for (my $x = 1; $x < $cols; $x++) {
+        for my $x (1 .. $cols-1) {
             poscursor(1, 1);
-            for (my $y = 0; $y < $rows; $y++) {
+            for my $y (0 .. $rows-1) {
                 $leftline = substr($$framesref[$oldframe][$y], $x);
                 $rightline = substr($$framesref[$newframe][$y], 0, $x);
                 if ($y + 1 == $rows) {
@@ -271,9 +263,9 @@ sub slideleft {
     if (defined($$framesref[$oldframe])) {
         my $leftline = "";
         my $rightline = "";
-        for (my $x = $cols - 1; $x > 0; $x--) {
+        for my $x (reverse 1 .. $cols-1) {
             poscursor(1, 1);
-            for (my $y = 0; $y < $rows; $y++) {
+            for my $y (0 .. $rows-1) {
                 $leftline = substr($$framesref[$newframe][$y], $x);
                 $rightline = substr($$framesref[$oldframe][$y], 0, $x);
                 if ($y + 1 == $rows) {
@@ -300,8 +292,8 @@ sub slidelineright {
     if (defined($$framesref[$newframe])) {
         my $leftline = "";
         my $rightline = "";
-        for (my $y = 0; $y < $rows; $y++) {
-            for (my $x = 1; $x <= $cols; $x++) {
+        for my $y (0 .. $rows-1) {
+            for my $x (1 .. $cols) {
                 poscursor(1,$y + 1);
                 $leftline = substr($$framesref[$oldframe][$y], $x);
                 $rightline = substr($$framesref[$newframe][$y], 0, $x);
@@ -328,8 +320,8 @@ sub slidelineleft {
     if (defined($$framesref[$oldframe])) {
         my $leftline = "";
         my $rightline = "";
-        for (my $y = 0; $y < $rows; $y++) {
-            for (my $x = $cols; $x >= 0; $x--) {
+        for my $y (0 .. $rows-1) {
+            for my $x (reverse 0 .. $cols) {
                 poscursor(1,$y + 1);
                 $leftline = substr($$framesref[$newframe][$y], $x);
                 $rightline = substr($$framesref[$oldframe][$y], 0, $x);
@@ -356,10 +348,10 @@ sub fadeoutfadein {
     my $wait = shift || 0.03;
 
     if (defined($$framesref[$newframe])) {
-        foreach my $color (@$graydientref) {
+        for my $color (@$graydientref) {
             poscursor(1,1);
 
-            for (my $y = 0; $y < $rows; $y++) {
+            for my $y (0 .. $rows-1) {
                 print "\033[38;5;${color}m" . $$framesref[$oldframe][$y];
                 unless ($y + 1 == $rows) { 
                     print "\n";
@@ -367,10 +359,10 @@ sub fadeoutfadein {
             }
             select(undef,undef,undef, $wait);
         }
-        foreach my $color (reverse @$graydientref) {
+        for my $color (reverse @$graydientref) {
             poscursor(1,1);
 
-            for (my $y = 0; $y < $rows; $y++) {
+            for my $y (0 .. $rows-1) {
                 print "\033[38;5;${color}m" . $$framesref[$newframe][$y];
                 unless ($y + 1 == $rows) { 
                     print "\n";
