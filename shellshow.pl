@@ -31,13 +31,13 @@ $| = 1;
 my $rows = `tput lines`;
 my $cols = `tput cols`;
 
-&setupterminal();
+setupterminal();
 
-$SIG{INT} = sub { &restoreterminal(); };
-$SIG{TERM} = sub { &restoreterminal(); };
+$SIG{INT} = \&restoreterminal;
+$SIG{TERM} = \&restoreterminal;
 
 if (@ARGV < 2 || $ARGV[0] eq "-h" || $ARGV[0] eq "--help") {
-    &showhelp();
+    showhelp();
 }
 
 # A simple timing array to use for the slides to give them
@@ -155,7 +155,7 @@ while ($frameno < $totalframes && $frameno >= 0) {
     # predetermined wipes and waittimes, etc.
 }
 
-&restoreterminal();
+restoreterminal();
 exit 0;
 
 
