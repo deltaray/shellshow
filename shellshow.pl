@@ -26,6 +26,7 @@
 use strict;
 use warnings;
 use autodie;
+use Time::HiRes qw(sleep);
 
 #For debugging, change this to a valid pts and watch for warnings
 #open my $pts, '>>', '/dev/pts/6';
@@ -48,6 +49,7 @@ if (@ARGV < 2 || $ARGV[0] eq "-h" || $ARGV[0] eq "--help") {
 
 # A simple timing array to use for the slides to give them
 # a little acceleration.
+# Total = 2*S(0.1/(n+1), n=0..$cols/2), diverges. F(80)=4.97, F(160)=5.66
 my @timing = map { 0.1 / ($_ + 1) } (0 .. ($cols/2));
 
 # Now make the other half of the timing array.
@@ -225,7 +227,7 @@ sub slideright {
             print join("\n", map {
                     substr $left->[$_].$right->[$_], $x, $cols;
                 } (0 .. $rows-1));
-            select(undef,undef, undef, $timing[$x]);
+            sleep($timing[$x]);
         }
     }
     return 1;
@@ -242,7 +244,7 @@ sub slideleft {
             print join("\n", map {
                     substr $left->[$_].$right->[$_], $x, $cols;
                 } (0 .. $rows-1));
-            select(undef,undef, undef, $timing[$x]);
+            sleep($timing[$x]);
         }
     }
     return 1;
@@ -262,13 +264,11 @@ sub slidelineright {
             my $rightline = $right->[$y];
             for my $x (1 .. $cols) {
                 print substr($leftline.$rightline, $x, $cols), "\r";
-                select(undef,undef,undef, 0.001);
+                sleep(0.0001);
             }
             unless ($y + 1 == $rows) {
                 print "\n";
             }
-            #select(undef,undef, undef, $timing[$y]);
-            select(undef,undef, undef, 0.0001);
         }
     }
     return 1;
@@ -286,13 +286,13 @@ sub slidelineleft {
             my $rightline = $right->[$y];
             for my $x (reverse 0 .. $cols) {
                 print substr($leftline.$rightline, $x, $cols), "\r";
-                select(undef,undef,undef, 0.001);
+                sleep(0.001);
             }
             unless ($y + 1 == $rows) {
                 print "\n";
             }
             #select(undef,undef, undef, $timing[$y]);
-            select(undef,undef, undef, 0.0001);
+            sleep(0.0001);
         }
     }
     return 1;
@@ -308,13 +308,13 @@ sub fadeoutfadein {
             poscursor(1,1);
             print "\033[38;5;${color}m";
             print join("\n", @{$frames[$oldframe]});
-            select(undef,undef,undef, $wait);
+            sleep($wait);
         }
         for my $color (reverse @graydient) {
             poscursor(1,1);
             print "\033[38;5;${color}m";
             print join("\n", @{$frames[$newframe]});
-            select(undef,undef,undef, $wait);
+            sleep($wait);
         }
 
 
