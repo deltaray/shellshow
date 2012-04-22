@@ -86,15 +86,31 @@ continue {
     }
 }
 
+my %dispatch = (
+    "\n" => sub { forward(\&slideright) },
+    " " => sub { forward(\&slideright) },
+    "\177" => sub { backward(\&slideleft) },
+    b => sub { backward(\&slideleft) },
+    l => sub { forward(\&slidelineright) },
+    k => sub { backward(\&slidelineleft) },
+    f => sub { forward(\&fadeoutfadein) },
+    d => sub { backward(\&fadeoutfadein) },
+    "]" => sub { forward(\&displayframe) },
+    "[" => sub { backward(\&displayframe) },
+);
+# Maybe have an r for random. Later of course we should allow a YAML config
+# file or something to setup a saved show so you can just play that with
+# predetermined wipes and waittimes, etc.
+
 my $totalframes = scalar @frames;
 
     print "\033[2J";
 #foreach $frameno (keys @frames) {
 my $frameno = 0;
 my $BSD_STYLE;
+displayframe(undef,$frameno);
 while ($frameno < $totalframes && $frameno >= 0) {
     poscursor(1,1);
-    displayframe(\@frames,$frameno,$cols,$rows);
 
     # Seems crazy to have to run system commands twice just to read a char.
     # We'll make this more efficient in the future and/or switch to C.
@@ -110,53 +126,27 @@ while ($frameno < $totalframes && $frameno >= 0) {
         system 'stty', 'icanon', 'eol', '^@'; # ASCII NUL
     }
 
-    # Do the transition. Perl needs a case to store all the Pearls.
-    my ($oldframe, $newframe);
-    if ($read eq "\n" or $read eq " ") { # Return or space to move forward.
-        $oldframe = $frameno;
-        $newframe = $frameno+1;
-        slideright(\@frames,$oldframe,$newframe, $cols, $rows, \@timing);
-        $frameno = $newframe;
-    } elsif ($read eq "\177" or $read eq "b") { # Backspace or b to go back.
-        $oldframe = $frameno;
-        $newframe = $frameno-1;
-        slideleft(\@frames,$oldframe,$newframe, $cols, $rows, \@timing);
-        $frameno = $newframe;
-    } elsif ($read eq "l") { # l to move forward using line at a time wipe
-        $oldframe = $frameno;
-        $newframe = $frameno+1;
-        slidelineright(\@frames,$oldframe,$newframe, $cols, $rows, \@timing);
-        $frameno = $newframe;
-    } elsif ($read eq "k") { # k to move backward using line at a time wipe
-        $oldframe = $frameno;
-        $newframe = $frameno-1;
-        slidelineleft(\@frames,$oldframe,$newframe, $cols, $rows, \@timing);
-        $frameno = $newframe;
-    } elsif ($read eq "f") { # f to move forward using fade method.
-        $oldframe = $frameno;
-        $newframe = $frameno+1;
-        fadeoutfadein(\@frames,$oldframe,$newframe, $cols, $rows, \@graydient, 0.01);
-        $frameno = $newframe;
-    } elsif ($read eq "d") { # d to move backward using fade method.
-        $oldframe = $frameno;
-        $newframe = $frameno-1;
-        fadeoutfadein(\@frames,$oldframe,$newframe, $cols, $rows, \@graydient, 0.01);
-        $frameno = $newframe;
-    } elsif ($read eq "]") { # ] to move forward with no transition.
-        ++$frameno;
-        displayframe(\@frames,$frameno,$cols,$rows);
-    } elsif ($read eq "[") { # [ to move backward with no transition.
-        --$frameno;
-        displayframe(\@frames,$frameno,$cols,$rows);
+    # Do the transition.
+    if (exists $dispatch{$read}) {
+        $dispatch{$read}->();
     }
-    # Maybe have an r for random. Later of course we should allow a YAML config
-    # file or something to setup a saved show so you can just play that with
-    # predetermined wipes and waittimes, etc.
 }
 
 restoreterminal();
 exit 0;
 
+sub forward {
+    my $subref = shift;
+    my $oldframe = $frameno;
+    ++$frameno;
+    $subref->($oldframe, $frameno);
+}
+sub backward {
+    my $subref = shift;
+    my $oldframe = $frameno;
+    --$frameno;
+    $subref->($oldframe, $frameno);
+}
 
 sub showhelp {
     print <<"EOF";
@@ -214,57 +204,45 @@ sub restoreterminal {
 }
 
 sub displayframe {
-    my $framesref = shift;
-    my $frame = shift;
-    my $cols = shift;
-    my $rows = shift;
-
-    my $line = "";
+    my $oldframe = shift;
+    my $newframe = shift;
     poscursor(1, 1);
-    print join("\n", @{$framesref->[$frame]});
+    print join("\n", @{$frames[$newframe]});
     return 1;
 }
 
 
 
 sub slideright {
-    my $framesref = shift;
     my $oldframe = shift;
     my $newframe = shift;
-    my $cols = shift;
-    my $rows = shift;
-    my $timingref = shift;
 
-    if (defined($$framesref[$newframe])) {
-        my $left = $framesref->[$oldframe];
-        my $right = $framesref->[$newframe];
+    if (defined($frames[$newframe])) {
+        my $left = $frames[$oldframe];
+        my $right = $frames[$newframe];
         for my $x (1 .. $cols-1) {
             poscursor(1, 1);
             print join("\n", map {
                     substr $left->[$_].$right->[$_], $x, $cols;
                 } (0 .. $rows-1));
-            select(undef,undef, undef, $$timingref[$x]);
+            select(undef,undef, undef, $timing[$x]);
         }
     }
     return 1;
 }
 sub slideleft {
-    my $framesref = shift;
     my $oldframe = shift;
     my $newframe = shift;
-    my $cols = shift;
-    my $rows = shift;
-    my $timingref = shift;
 
-    if (defined($$framesref[$oldframe])) {
-        my $left = $framesref->[$newframe];
-        my $right = $framesref->[$oldframe];
+    if (defined($frames[$oldframe])) {
+        my $left = $frames[$newframe];
+        my $right = $frames[$oldframe];
         for my $x (reverse 1 .. $cols-1) {
             poscursor(1, 1);
             print join("\n", map {
                     substr $left->[$_].$right->[$_], $x, $cols;
                 } (0 .. $rows-1));
-            select(undef,undef, undef, $$timingref[$x]);
+            select(undef,undef, undef, $timing[$x]);
         }
     }
     return 1;
@@ -272,16 +250,12 @@ sub slideleft {
 
 # These are too slow.
 sub slidelineright {
-    my $framesref = shift;
     my $oldframe = shift;
     my $newframe = shift;
-    my $cols = shift;
-    my $rows = shift;
-    my $timingref = shift;
 
-    if (defined($$framesref[$newframe])) {
-        my $left = $framesref->[$oldframe];
-        my $right = $framesref->[$newframe];
+    if (defined($frames[$newframe])) {
+        my $left = $frames[$oldframe];
+        my $right = $frames[$newframe];
         for my $y (0 .. $rows-1) {
             poscursor(1,$y + 1);
             my $leftline = $left->[$y];
@@ -293,23 +267,19 @@ sub slidelineright {
             unless ($y + 1 == $rows) {
                 print "\n";
             }
-            #select(undef,undef, undef, $$timingref[$y]);
+            #select(undef,undef, undef, $timing[$y]);
             select(undef,undef, undef, 0.0001);
         }
     }
     return 1;
 }
 sub slidelineleft {
-    my $framesref = shift;
     my $oldframe = shift;
     my $newframe = shift;
-    my $cols = shift;
-    my $rows = shift;
-    my $timingref = shift;
 
-    if (defined($$framesref[$oldframe])) {
-        my $left = $framesref->[$newframe];
-        my $right = $framesref->[$oldframe];
+    if (defined($frames[$oldframe])) {
+        my $left = $frames[$newframe];
+        my $right = $frames[$oldframe];
         for my $y (0 .. $rows-1) {
             poscursor(1,$y + 1);
             my $leftline = $left->[$y];
@@ -321,7 +291,7 @@ sub slidelineleft {
             unless ($y + 1 == $rows) {
                 print "\n";
             }
-            #select(undef,undef, undef, $$timingref[$y]);
+            #select(undef,undef, undef, $timing[$y]);
             select(undef,undef, undef, 0.0001);
         }
     }
@@ -329,25 +299,21 @@ sub slidelineleft {
 }
 
 sub fadeoutfadein {
-    my $framesref = shift;
     my $oldframe = shift;
     my $newframe = shift;
-    my $cols = shift;
-    my $rows = shift;
-    my $graydientref = shift;
-    my $wait = shift || 0.03;
+    my $wait = 0.01;
 
-    if (defined($$framesref[$newframe])) {
-        for my $color (@$graydientref) {
+    if (defined($frames[$newframe])) {
+        for my $color (@graydient) {
             poscursor(1,1);
             print "\033[38;5;${color}m";
-            print join("\n", @{$framesref->[$oldframe]});
+            print join("\n", @{$frames[$oldframe]});
             select(undef,undef,undef, $wait);
         }
-        for my $color (reverse @$graydientref) {
+        for my $color (reverse @graydient) {
             poscursor(1,1);
             print "\033[38;5;${color}m";
-            print join("\n", @{$framesref->[$newframe]});
+            print join("\n", @{$frames[$newframe]});
             select(undef,undef,undef, $wait);
         }
 
