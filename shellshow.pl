@@ -50,10 +50,16 @@ if (@ARGV < 2 || $ARGV[0] eq "-h" || $ARGV[0] eq "--help") {
 # A simple timing array to use for the slides to give them
 # a little acceleration.
 # Total = 2*S(0.1/(n+1), n=0..$cols/2), diverges. F(80)=4.97, F(160)=5.66
-my @timing = map { 0.1 / ($_ + 1) } (0 .. ($cols/2));
+my @timing = map { 1 / ($_ + 1) } (0 .. ($cols/2));
 
 # Now make the other half of the timing array.
-push @timing, reverse @timing[0..$#timing-1];
+push @timing, reverse @timing;
+
+#Target transition time in seconds (slow terminals will be slower)
+my $transition_time = 0.5; #seconds
+my $timing_sum = 0;
+for (@timing) { $timing_sum += $_ }
+my $timing_scale = $transition_time / $timing_sum;
 
 # Gray colors in the ansi color spectrum
 my @graydient = reverse (232 .. 255);
@@ -220,14 +226,15 @@ sub slideright {
     my $newframe = shift;
 
     if (defined($frames[$newframe])) {
-        my $left = $frames[$oldframe];
-        my $right = $frames[$newframe];
-        for my $x (1 .. $cols-1) {
+        my @two_frames = map {
+                $frames[$oldframe][$_] . $frames[$newframe][$_]
+            } (0 .. $rows-1);
+        for my $x (1 .. $cols) {
             poscursor(1, 1);
             print join("\n", map {
-                    substr $left->[$_].$right->[$_], $x, $cols;
-                } (0 .. $rows-1));
-            sleep($timing[$x]);
+                    substr $_, $x, $cols;
+                } @two_frames);
+            sleep($timing_scale * $timing[$x]);
         }
     }
     return 1;
@@ -237,14 +244,15 @@ sub slideleft {
     my $newframe = shift;
 
     if (defined($frames[$oldframe])) {
-        my $left = $frames[$newframe];
-        my $right = $frames[$oldframe];
-        for my $x (reverse 1 .. $cols-1) {
+        my @two_frames = map {
+                $frames[$newframe][$_] . $frames[$oldframe][$_]
+            } (0 .. $rows-1);
+        for my $x (reverse 0 .. $cols-1) {
             poscursor(1, 1);
             print join("\n", map {
-                    substr $left->[$_].$right->[$_], $x, $cols;
-                } (0 .. $rows-1));
-            sleep($timing[$x]);
+                    substr $_, $x, $cols;
+                } @two_frames);
+            sleep($timing_scale * $timing[$x]);
         }
     }
     return 1;
@@ -256,15 +264,14 @@ sub slidelineright {
     my $newframe = shift;
 
     if (defined($frames[$newframe])) {
-        my $left = $frames[$oldframe];
-        my $right = $frames[$newframe];
+        my @two_frames = map {
+                $frames[$oldframe][$_] . $frames[$newframe][$_]
+            } (0 .. $rows-1);
         for my $y (0 .. $rows-1) {
             poscursor(1,$y + 1);
-            my $leftline = $left->[$y];
-            my $rightline = $right->[$y];
             for my $x (1 .. $cols) {
-                print substr($leftline.$rightline, $x, $cols), "\r";
-                sleep(0.0001);
+                print substr($two_frames[$y], $x, $cols), "\r";
+                sleep($transition_time / ($cols * $rows));
             }
             unless ($y + 1 == $rows) {
                 print "\n";
@@ -278,21 +285,18 @@ sub slidelineleft {
     my $newframe = shift;
 
     if (defined($frames[$oldframe])) {
-        my $left = $frames[$newframe];
-        my $right = $frames[$oldframe];
+        my @two_frames = map {
+                $frames[$newframe][$_] . $frames[$oldframe][$_]
+            } (0 .. $rows-1);
         for my $y (0 .. $rows-1) {
             poscursor(1,$y + 1);
-            my $leftline = $left->[$y];
-            my $rightline = $right->[$y];
-            for my $x (reverse 0 .. $cols) {
-                print substr($leftline.$rightline, $x, $cols), "\r";
-                sleep(0.001);
+            for my $x (reverse 0 .. $cols-1) {
+                print substr($two_frames[$y], $x, $cols), "\r";
+                sleep($transition_time / ($cols * $rows));
             }
             unless ($y + 1 == $rows) {
                 print "\n";
             }
-            #select(undef,undef, undef, $timing[$y]);
-            sleep(0.0001);
         }
     }
     return 1;
@@ -301,22 +305,22 @@ sub slidelineleft {
 sub fadeoutfadein {
     my $oldframe = shift;
     my $newframe = shift;
-    my $wait = 0.01;
 
     if (defined($frames[$newframe])) {
+        my $oldlines = join("\n", @{$frames[$oldframe]});
+        my $newlines = join("\n", @{$frames[$newframe]});
         for my $color (@graydient) {
             poscursor(1,1);
             print "\033[38;5;${color}m";
-            print join("\n", @{$frames[$oldframe]});
-            sleep($wait);
+            print $oldlines;
+            sleep($transition_time / (2 * @graydient));
         }
         for my $color (reverse @graydient) {
             poscursor(1,1);
             print "\033[38;5;${color}m";
-            print join("\n", @{$frames[$newframe]});
-            sleep($wait);
+            print $newlines;
+            sleep($transition_time / (2 * @graydient));
         }
-
 
     }
     return 1;
