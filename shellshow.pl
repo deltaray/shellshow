@@ -27,12 +27,16 @@ use strict;
 use warnings;
 use autodie;
 use Time::HiRes qw(sleep);
+use Getopt::Long qw(:config auto_help);
+use Pod::Usage;
 
 #For debugging, change this to a valid pts and watch for warnings
 #open my $pts, '>>', '/dev/pts/6';
 #open STDERR, '>&', $pts;
 
-my $VERSION = 0.1;
+my $VERSION = 0.2;
+GetOptions() or pod2usage(2);
+pod2usage(2) if @ARGV < 2;
 
 $| = 1;
 my $rows = `tput lines`;
@@ -42,10 +46,6 @@ setupterminal();
 
 $SIG{INT} = \&restoreterminal;
 $SIG{TERM} = \&restoreterminal;
-
-if (@ARGV < 2 || $ARGV[0] eq "-h" || $ARGV[0] eq "--help") {
-    showhelp();
-}
 
 # A simple timing array to use for the slides to give them
 # a little acceleration.
@@ -158,46 +158,6 @@ sub backward {
     my $oldframe = $frameno;
     --$frameno;
     $subref->($oldframe, $frameno);
-}
-
-sub showhelp {
-    print <<"EOF";
---------------------------------------------------------------------------------
-shellshow: A program to show "slides" in an interesting way inside the terminal
-Version: $VERSION
---------------------------------------------------------------------------------
-Usage:
- shellshow <file1> <file2> [file3 [, file4, [ ... ]]]
-
-Movement/Wipes:
-   <space>, <enter> = Move forward a frame in slide motion.
-   <b>, <backspace> = Move backward a frame in slide motion.
-   <l>              = Move forward with slideline wipe. (slow)
-   <k>              = Move backward with slideline wipe. (slow)
-   <f>              = Move forward with fadeout/fadein wipe. (req. black bg)
-   <d>              = Move backward with fadeout/fadein wipe. (req. black bg)
-   <]>              = Move forward without transition
-   <[>              = Move backward without transition
-   <w>              = Move forward with horizontal wipe transition
-   <q>              = Move backward with horizontal wipe transition
-   <.>              = Move forward with vertical wipe transition
-   <,>              = Move backward with vertical wipe transition
-
-Description:
- Shellshow determines the size of your terminal window and reads in
- files given as args as frames, storing only the part of the file that 
- will fit inside the terminal window. You must at least give two filenames
- as arguments. You can use shell glob patterns/wildcards if you want.
-
-Limitations:
- Right now this program can't handle files with ANSI escapes or multibyte
- characters like UTF-8 or binary characters.
-
- I'd recommend using a black background with white forground text for now.
- Eventually we'll have options for working with various background types, etc.
-
-EOF
-    exit(0);
 }
 
 sub setupterminal {
@@ -391,4 +351,81 @@ sub poscursor {
     print "\033[${y};${x}H";
     return 1;
 }
+
+__END__
+=head1 NAME
+
+shellshow - A program to show "slides" in an interesting way inside the terminal
+
+=head1 SYNOPSIS
+
+shellshow I<file1> I<file2> [ I<file3> [ I<file4> [ I<...> ]]]
+
+=head2 Movement/Wipes:
+
+=over
+
+=item B<space>, B<enter>
+
+Move forward a frame in slide motion.
+
+=item B<b>, B<backspace>
+
+Move backward a frame in slide motion.
+
+=item B<l>
+
+Move forward with slideline wipe. (slow)
+
+=item B<k>
+
+Move backward with slideline wipe. (slow)
+
+=item B<f>
+
+Move forward with fadeout/fadein wipe. (req. black bg)
+
+=item B<d>
+
+Move backward with fadeout/fadein wipe. (req. black bg)
+
+=item B<]>
+
+Move forward without transition
+
+=item B<[>
+
+Move backward without transition
+
+=item B<w>
+
+Move forward with horizontal wipe transition
+
+=item B<q>
+
+Move backward with horizontal wipe transition
+
+=item B<.>
+
+Move forward with vertical wipe transition
+
+=item B<,>
+
+Move backward with vertical wipe transition
+
+=back
+
+=head1 DESCRIPTION
+
+Shellshow determines the size of your terminal window and reads in
+files given as args as frames, storing only the part of the file that
+will fit inside the terminal window. You must at least give two filenames
+as arguments. You can use shell glob patterns/wildcards if you want.
+
+=head1 LIMITATIONS
+Right now this program can't handle files with ANSI escapes or multibyte
+characters like UTF-8 or binary characters.
+
+I'd recommend using a black background with white forground text for now.
+Eventually we'll have options for working with various background types, etc.
 
