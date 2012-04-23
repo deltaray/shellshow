@@ -88,6 +88,8 @@ continue {
         close ARGV; #reset $. and skip to next file
     }
 }
+push @frames, [(" " x $cols) x $rows];
+$frames[-1][0] = sprintf '%*s', $cols, 'End of presentation. Click to exit.' . ' ' x ($cols / 2);
 
 my %dispatch = (
     "\n" => sub { forward(\&slideright) },
