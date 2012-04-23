@@ -29,6 +29,7 @@ use autodie;
 use Time::HiRes qw(sleep);
 use Getopt::Long qw(:config auto_help);
 use Pod::Usage;
+use Scalar::Util qw(looks_like_number);
 
 #For debugging, change this to a valid pts and watch for warnings
 #open my $pts, '>>', '/dev/pts/6';
@@ -148,6 +149,9 @@ while ($frameno < $totalframes && $frameno >= 0) {
     # Do the transition.
     if (exists $dispatch{$read}) {
         $dispatch{$read}->();
+    }
+    elsif (looks_like_number $read and $read < $totalframes and $read >= 0) {
+        displayframe(undef, $read);
     }
 }
 
