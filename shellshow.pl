@@ -105,6 +105,10 @@ my %dispatch = (
     d => sub { backward(\&fadeoutfadein) },
     "]" => sub { forward(\&displayframe) },
     "[" => sub { backward(\&displayframe) },
+    w => sub { forward(\&linebyline) },
+    q => sub { backward(\&linebyline) },
+    '.' => sub { forward(\&wipeleft) },
+    ',' => sub { backward(\&wiperight) },
 );
 # Maybe have an r for random. Later of course we should allow a YAML config
 # file or something to setup a saved show so you can just play that with
@@ -174,6 +178,10 @@ Movement/Wipes:
    <d>              = Move backward with fadeout/fadein wipe. (req. black bg)
    <]>              = Move forward without transition
    <[>              = Move backward without transition
+   <w>              = Move forward with horizontal wipe transition
+   <q>              = Move backward with horizontal wipe transition
+   <.>              = Move forward with vertical wipe transition
+   <,>              = Move backward with vertical wipe transition
 
 Description:
  Shellshow determines the size of your terminal window and reads in
@@ -297,6 +305,56 @@ sub slidelineleft {
             unless ($y + 1 == $rows) {
                 print "\n";
             }
+        }
+    }
+    return 1;
+}
+
+sub linebyline {
+    my $oldframe = shift;
+    my $newframe = shift;
+
+    if (defined($frames[$newframe] and $newframe >= 0)) {
+        poscursor(1,1);
+        for my $y (0 .. $rows-1) {
+            print $frames[$newframe][$y];
+            unless ($y + 1 == $rows) {
+                print "\n";
+                sleep($transition_time / $rows);
+            }
+        }
+    }
+    return 1;
+}
+
+sub wiperight {
+    my $oldframe = shift;
+    my $newframe = shift;
+
+    if (defined($frames[$newframe])) {
+        my $newlines = $frames[$newframe];
+        for my $x (1 .. $cols) {
+            for my $y (1 .. $rows) {
+                poscursor($x,$y);
+                print substr($newlines->[$y-1], $x-1, 1);
+            }
+            sleep($transition_time / $cols);
+        }
+    }
+    return 1;
+}
+sub wipeleft {
+    my $oldframe = shift;
+    my $newframe = shift;
+
+    if (defined($frames[$newframe])) {
+        my $newlines = $frames[$newframe];
+        for my $x (reverse 1 .. $cols) {
+            for my $y (1 .. $rows) {
+                poscursor($x,$y);
+                print substr($newlines->[$y-1], $x-1, 1);
+            }
+            sleep($transition_time / $cols);
         }
     }
     return 1;
