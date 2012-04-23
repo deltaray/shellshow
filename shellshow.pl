@@ -111,8 +111,7 @@ my %dispatch = (
 
 my $totalframes = scalar @frames;
 
-$SIG{INT} = \&restoreterminal;
-$SIG{TERM} = \&restoreterminal;
+$SIG{INT} = $SIG{TERM} = \&safe_exit;
 $SIG{__DIE__} = sub { my $err = shift; restoreterminal(); die $err };
 
 setupterminal();
@@ -145,19 +144,20 @@ while ($frameno < $totalframes && $frameno >= 0) {
     }
 }
 
-restoreterminal();
-exit 0;
+safe_exit();
 
 sub forward {
     my $subref = shift;
     my $oldframe = $frameno;
     ++$frameno;
+    safe_exit() if $frameno >= $totalframes;
     $subref->($oldframe, $frameno);
 }
 sub backward {
     my $subref = shift;
     my $oldframe = $frameno;
     --$frameno;
+    safe_exit() if $frameno < 0;
     $subref->($oldframe, $frameno);
 }
 
@@ -177,6 +177,11 @@ sub restoreterminal {
 #    printf "\033[2J\033[?47l"; # Switch back to normal screen (rmcup)
     printf "\033[?25h"; # show the cursor again. (cnorm)
     `stty echo`; # Turn input echo back on.
+}
+
+sub safe_exit {
+    restoreterminal();
+    exit 0;
 }
 
 sub displayframe {
