@@ -112,7 +112,12 @@ my %dispatch = (
 my $totalframes = scalar @frames;
 
 $SIG{INT} = $SIG{TERM} = \&safe_exit;
-$SIG{__DIE__} = sub { my $err = shift; restoreterminal(); die $err };
+$SIG{__DIE__} = sub {
+    die @_ unless defined $^S;
+    restoreterminal() unless $^S;
+    die @_;
+};
+END { restoreterminal() }
 
 setupterminal();
 
