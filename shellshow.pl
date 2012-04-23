@@ -42,11 +42,6 @@ $| = 1;
 my $rows = `tput lines`;
 my $cols = `tput cols`;
 
-setupterminal();
-
-$SIG{INT} = \&restoreterminal;
-$SIG{TERM} = \&restoreterminal;
-
 # A simple timing array to use for the slides to give them
 # a little acceleration.
 # Total = 2*S(0.1/(n+1), n=0..$cols/2), diverges. F(80)=4.97, F(160)=5.66
@@ -116,6 +111,12 @@ my %dispatch = (
 
 my $totalframes = scalar @frames;
 
+$SIG{INT} = \&restoreterminal;
+$SIG{TERM} = \&restoreterminal;
+$SIG{__DIE__} = sub { my $err = shift; restoreterminal(); die $err };
+
+setupterminal();
+
     print "\033[2J";
 #foreach $frameno (keys @frames) {
 my $frameno = 0;
@@ -176,14 +177,13 @@ sub restoreterminal {
 #    printf "\033[2J\033[?47l"; # Switch back to normal screen (rmcup)
     printf "\033[?25h"; # show the cursor again. (cnorm)
     `stty echo`; # Turn input echo back on.
-    exit 0;
 }
 
 sub displayframe {
     my $oldframe = shift;
     my $newframe = shift;
     poscursor(1, 1);
-    print join("\n", @{$frames[$newframe]});
+    print join("\n", @{$frames[$newframe]}) if defined $frames[$newframe];
     return 1;
 }
 
