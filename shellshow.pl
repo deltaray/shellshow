@@ -30,6 +30,7 @@ use Time::HiRes qw(sleep);
 use Getopt::Long qw(:config auto_help);
 use Pod::Usage;
 use Scalar::Util qw(looks_like_number);
+use List::Util qw(sum);
 
 #For debugging, change this to a valid pts and watch for warnings
 #open my $pts, '>>', '/dev/pts/6';
@@ -43,6 +44,8 @@ $| = 1;
 my $rows = `tput lines`;
 my $cols = `tput cols`;
 
+#Assume 80x24 is 0-delay, then scale "frame rate"
+my $framerate = int(($rows * $cols) / (80 * 24)) or 1;
 # A simple timing array to use for the slides to give them
 # a little acceleration.
 # Total = 2*S(0.1/(n+1), n=0..$cols/2), diverges. F(80)=4.97, F(160)=5.66
@@ -53,9 +56,7 @@ push @timing, reverse @timing;
 
 #Target transition time in seconds (slow terminals will be slower)
 my $transition_time = 0.5; #seconds
-my $timing_sum = 0;
-for (@timing) { $timing_sum += $_ }
-my $timing_scale = $transition_time / $timing_sum;
+my $timing_scale = $transition_time / (sum @timing);
 
 # Gray colors in the ansi color spectrum
 my @graydient = reverse (232 .. 255);
@@ -151,6 +152,7 @@ while ($frameno < $totalframes && $frameno >= 0) {
         $dispatch{$read}->();
     }
     elsif (looks_like_number $read and $read < $totalframes and $read >= 0) {
+        $frameno = int $read;
         displayframe(undef, $read);
     }
 }
@@ -213,13 +215,14 @@ sub slideright {
         my @two_frames = map {
                 $frames[$oldframe][$_] . $frames[$newframe][$_]
             } (0 .. $rows-1);
-        for my $x (1 .. $cols) {
+        for my $x (1 .. $cols/$framerate) {
             poscursor(1, 1);
             print join("\n", map {
-                    substr $_, $x, $cols;
+                    substr $_, $x*$framerate, $cols;
                 } @two_frames);
-            sleep($timing_scale * $timing[$x]);
+            sleep($timing_scale * (sum @timing[$x .. $x+$framerate-1]));
         }
+        displayframe(undef, $newframe);
     }
     return 1;
 }
@@ -231,13 +234,15 @@ sub slideleft {
         my @two_frames = map {
                 $frames[$newframe][$_] . $frames[$oldframe][$_]
             } (0 .. $rows-1);
-        for my $x (reverse 0 .. $cols-1) {
+        for my $x (reverse 0 .. ($cols-1)/$framerate) {
             poscursor(1, 1);
             print join("\n", map {
-                    substr $_, $x, $cols;
+                    substr $_, $x*$framerate, $cols;
                 } @two_frames);
-            sleep($timing_scale * $timing[$x]);
+            sleep($timing_scale * (sum @timing[$x .. $x+$framerate-1]));
         }
+        #Not needed, since we go all the way to 0
+        #displayframe(undef, $newframe);
     }
     return 1;
 }
@@ -253,10 +258,11 @@ sub slidelineright {
             } (0 .. $rows-1);
         for my $y (0 .. $rows-1) {
             poscursor(1,$y + 1);
-            for my $x (1 .. $cols) {
-                print substr($two_frames[$y], $x, $cols), "\r";
+            for my $x (1 .. $cols/$framerate) {
+                print substr($two_frames[$y], $x*$framerate, $cols), "\r";
                 sleep($transition_time / ($cols * $rows));
             }
+            print $frames[$newframe][$y];
             unless ($y + 1 == $rows) {
                 print "\n";
             }
@@ -274,10 +280,12 @@ sub slidelineleft {
             } (0 .. $rows-1);
         for my $y (0 .. $rows-1) {
             poscursor(1,$y + 1);
-            for my $x (reverse 0 .. $cols-1) {
-                print substr($two_frames[$y], $x, $cols), "\r";
+            for my $x (reverse 0 .. ($cols-1)/$framerate) {
+                print substr($two_frames[$y], $x*$framerate, $cols), "\r";
                 sleep($transition_time / ($cols * $rows));
             }
+            #Not needed, since we go all the way to 0
+            #print $frames[$newframe][$y];
             unless ($y + 1 == $rows) {
                 print "\n";
             }
@@ -309,12 +317,12 @@ sub wiperight {
 
     if (defined($frames[$newframe])) {
         my $newlines = $frames[$newframe];
-        for my $x (1 .. $cols) {
+        for my $x (0 .. $cols/$framerate) {
             for my $y (1 .. $rows) {
-                poscursor($x,$y);
-                print substr($newlines->[$y-1], $x-1, 1);
+                poscursor(1+$x*$framerate,$y);
+                print substr($newlines->[$y-1], $x*$framerate, $framerate);
             }
-            sleep($transition_time / $cols);
+            sleep($framerate * $transition_time / $cols);
         }
     }
     return 1;
@@ -325,12 +333,12 @@ sub wipeleft {
 
     if (defined($frames[$newframe])) {
         my $newlines = $frames[$newframe];
-        for my $x (reverse 1 .. $cols) {
+        for my $x (reverse 0 .. $cols/$framerate) {
             for my $y (1 .. $rows) {
-                poscursor($x,$y);
-                print substr($newlines->[$y-1], $x-1, 1);
+                poscursor(1+$x*$framerate,$y);
+                print substr($newlines->[$y-1], $x*$framerate, $framerate);
             }
-            sleep($transition_time / $cols);
+            sleep($framerate * $transition_time / $cols);
         }
     }
     return 1;
@@ -344,18 +352,20 @@ sub fadeoutfadein {
         my $oldlines = join("\n", @{$frames[$oldframe]});
         my $newlines = join("\n", @{$frames[$newframe]});
         for my $color (@graydient) {
+            next if $color % $framerate;
             poscursor(1,1);
             print "\033[38;5;${color}m";
             print $oldlines;
-            sleep($transition_time / (2 * @graydient));
+            sleep($framerate * $transition_time / (2 * @graydient));
         }
         for my $color (reverse @graydient) {
+            next if $color % $framerate;
             poscursor(1,1);
             print "\033[38;5;${color}m";
             print $newlines;
-            sleep($transition_time / (2 * @graydient));
+            sleep($framerate * $transition_time / (2 * @graydient));
         }
-
+        print "\033[0m$newlines";
     }
     return 1;
 }
