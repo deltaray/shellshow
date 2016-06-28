@@ -23,82 +23,115 @@
 #
 # You may contact the author at <deltaray@slugbug.org>
 
-my $VERSION = 0.1;
+use strict;
+use warnings;
+use autodie;
+use Time::HiRes qw(sleep);
+use Getopt::Long qw(:config auto_help);
+use Pod::Usage;
+use Scalar::Util qw(looks_like_number);
+use List::Util qw(sum);
+
+#For debugging, change this to a valid pts and watch for warnings
+#open my $pts, '>>', '/dev/pts/6';
+#open STDERR, '>&', $pts;
+
+my $VERSION = 0.2;
+GetOptions() or pod2usage(2);
+pod2usage(2) if @ARGV < 2;
 
 $| = 1;
 my $rows = `tput lines`;
 my $cols = `tput cols`;
 
-&setupterminal();
-
-$SIG{INT} = sub { &restoreterminal(); };
-$SIG{TERM} = sub { &restoreterminal(); };
-
-if (@ARGV < 2 || $ARGV[0] eq "-h" || $ARGV[0] eq "--help") {
-    &showhelp();
-}
-
+#Assume 80x24 is 0-delay, then scale "frame rate"
+my $framerate = int(($rows * $cols) / (80 * 24)) or 1;
 # A simple timing array to use for the slides to give them
 # a little acceleration.
-my @timing = ();
-for($i = 0; $i < $cols/2; $i++) {
-    $time = 0.1 / ($i + 1);
-    $timing[$i] = $time;
-}
-# Now make the other half of the timing array.
-for($i = $cols/2 - 1; $i >= 0; $i--) {
-#    print "pushing " . $timing[$i] . " onto the list.\n";
-    push(@timing, $timing[$i]);
-}
+# Total = 2*S(0.1/(n+1), n=0..$cols/2), diverges. F(80)=4.97, F(160)=5.66
+my @timing = map { 1 / ($_ + 1) } (0 .. ($cols/2));
 
-my @graydient = ();
-for ($i = 255; $i >= 232; $i--) { # Gray colors in the ansi color spectrum
-    push(@graydient, $i);
-}
+# Now make the other half of the timing array.
+push @timing, reverse @timing;
+
+#Target transition time in seconds (slow terminals will be slower)
+my $transition_time = 0.5; #seconds
+my $timing_scale = $transition_time / (sum @timing);
+
+# Gray colors in the ansi color spectrum
+my @graydient = reverse (232 .. 255);
 
 my @frames = ();
 my $frame = 0;
 
 
-foreach $file (@ARGV) {
-    open(my $fh, $file);
-    my $thisline;
-    my $lineno = 0;
-LINE: while (<$fh>) {
-        chomp($_);
-        if ($lineno > $rows - 1) {
-            last LINE;
-        }
-	    $_ =~ s/\t/    /g; # Convert tabs into 4 spaces.
-        my $thisline = substr($_, 0, $cols);
-        if (length($_) > $cols) {
-		    $thisline = substr($thisline, $cols-1,1, "+"); # This does the pico/nano like behavior of showing that a line is overlength.
-        }
-        my $diff = $cols - length($thisline);
-        if ($diff) {
-            $thisline .= " " x $diff;
-        }
-        $frames[$frame][$lineno] = $thisline;
-        $lineno++;
+while (<>) {
+    chomp;
+    s/\t/    /g; # Convert tabs into 4 spaces.
+    my $thisline = substr($_, 0, $cols);
+    if (length > $cols) {
+        substr($thisline, -1) = "+"; # This does the pico/nano like behavior of showing that a line is overlength.
     }
-    if ($lineno <= $rows) {
-        my $thisline = " " x $cols;
-        foreach ($lineno; $lineno <= $rows; $lineno++) {
-            $frames[$frame][$lineno] = $thisline;
-        }
+    my $diff = $cols - length($thisline);
+    if ($diff) {
+        $thisline .= " " x $diff;
     }
-    $frame++;
-    close($fh);
+    $frames[$frame][$.-1] = $thisline;
 }
+continue {
+    if ($. + 1 > $rows or eof ARGV) {
+        if ($. < $rows) {
+            my $thisline = " " x $cols;
+            for my $l ($. .. $rows-1) {
+                $frames[$frame][$l] = $thisline;
+            }
+        }
+        $frame++;
+        close ARGV; #reset $. and skip to next file
+    }
+}
+push @frames, [(" " x $cols) x $rows];
+$frames[-1][0] = sprintf '%*s', $cols, 'End of presentation. Click to exit.' . ' ' x ($cols / 2);
+
+my %dispatch = (
+    "\n" => sub { forward(\&slideright) },
+    " " => sub { forward(\&slideright) },
+    "\177" => sub { backward(\&slideleft) },
+    b => sub { backward(\&slideleft) },
+    l => sub { forward(\&slidelineright) },
+    k => sub { backward(\&slidelineleft) },
+    f => sub { forward(\&fadeoutfadein) },
+    d => sub { backward(\&fadeoutfadein) },
+    "]" => sub { forward(\&displayframe) },
+    "[" => sub { backward(\&displayframe) },
+    w => sub { forward(\&linebyline) },
+    q => sub { backward(\&linebyline) },
+    '.' => sub { forward(\&wipeleft) },
+    ',' => sub { backward(\&wiperight) },
+);
+# Maybe have an r for random. Later of course we should allow a YAML config
+# file or something to setup a saved show so you can just play that with
+# predetermined wipes and waittimes, etc.
 
 my $totalframes = scalar @frames;
 
+$SIG{INT} = $SIG{TERM} = \&safe_exit;
+$SIG{__DIE__} = sub {
+    die @_ unless defined $^S;
+    restoreterminal() unless $^S;
+    die @_;
+};
+END { restoreterminal() }
+
+setupterminal();
+
     print "\033[2J";
 #foreach $frameno (keys @frames) {
-$frameno = 0;
+my $frameno = 0;
+my $BSD_STYLE;
+displayframe(undef,$frameno);
 while ($frameno < $totalframes && $frameno >= 0) {
     poscursor(1,1);
-    displayframe(\@frames,$frameno,$cols,$rows);
 
     # Seems crazy to have to run system commands twice just to read a char.
     # We'll make this more efficient in the future and/or switch to C.
@@ -107,86 +140,38 @@ while ($frameno < $totalframes && $frameno >= 0) {
     } else {
         system "stty", '-icanon', 'eol', "\001";
     }
-    $read = getc();
+    my $read = getc();
     if ($BSD_STYLE) {
         system "stty -cbreak </dev/tty >/dev/tty 2>&1";
     } else {
         system 'stty', 'icanon', 'eol', '^@'; # ASCII NUL
     }
 
-    # Do the transition. Perl needs a case to store all the Pearls.
-    if ($read eq "\n" or $read eq " ") { # Return or space to move forward.
-        $oldframe = $frameno;
-        $newframe = $frameno+1;
-        slideright(\@frames,$oldframe,$newframe, $cols, $rows, \@timing);
-        $frameno = $newframe;
-    } elsif ($read eq "\177" or $read eq "b") { # Backspace to go back.
-        $oldframe = $frameno;
-        $newframe = $frameno-1;
-        slideleft(\@frames,$oldframe,$newframe, $cols, $rows, \@timing);
-        $frameno = $newframe;
-    } elsif ($read eq "l") { # l to move forward using line at a time wipe
-        $oldframe = $frameno;
-        $newframe = $frameno+1;
-        slidelineright(\@frames,$oldframe,$newframe, $cols, $rows, \@timing);
-        $frameno = $newframe;
-    } elsif ($read eq "k") { # l to move forward using line at a time wipe
-        $oldframe = $frameno;
-        $newframe = $frameno-1;
-        slidelineleft(\@frames,$oldframe,$newframe, $cols, $rows, \@timing);
-        $frameno = $newframe;
-    } elsif ($read eq "f") { # f to move forward using fade method.
-        $oldframe = $frameno;
-        $newframe = $frameno+1;
-        fadeoutfadein(\@frames,$oldframe,$newframe, $cols, $rows, \@graydient, 0.01);
-        $frameno = $newframe;
-    } elsif ($read eq "d") { # f to move forward using fade method.
-        $oldframe = $frameno;
-        $newframe = $frameno-1;
-        fadeoutfadein(\@frames,$oldframe,$newframe, $cols, $rows, \@graydient, 0.01);
-        $frameno = $newframe;
+    # Do the transition.
+    if (exists $dispatch{$read}) {
+        $dispatch{$read}->();
     }
-    # Maybe have an r for random. Later of course we should allow a YAML config
-    # file or something to setup a saved show so you can just play that with
-    # predetermined wipes and waittimes, etc.
+    elsif (looks_like_number $read and $read < $totalframes and $read >= 0) {
+        $frameno = int $read;
+        displayframe(undef, $read);
+    }
 }
 
-&restoreterminal();
-exit 0;
+safe_exit();
 
-
-sub showhelp {
-    print <<"EOF";
---------------------------------------------------------------------------------
-shellshow: A program to show "slides" in an interesting way inside the terminal
-Version: $VERSION
---------------------------------------------------------------------------------
-Usage:
- shellshow <file1> <file2> [file3 [, file4, [ ... ]]]
-
-Movement/Wipes:
-   <space>, <enter> = Move forward a frame in slide motion.
-   <b>, <backspace> = Move backward a frame in slide motion.
-   <l>              = Move forward with slideline wipe. (slow)
-   <k>              = Move backward with slideline wipe. (slow)
-   <f>              = Move forward with fadeout/fadein wipe. (req. black bg)
-   <d>              = Move backward with fadeout/fadein wipe. (req. black bg)
-
-Description:
- Shellshow determines the size of your terminal window and reads in
- files given as args as frames, storing only the part of the file that 
- will fit inside the terminal window. You must at least give two filenames
- as arguments. You can use shell glob patterns/wildcards if you want.
-
-Limitations:
- Right now this program can't handle files with ANSI escapes or multibyte
- characters like UTF-8 or binary characters.
-
- I'd recommend using a black background with white forground text for now.
- Eventually we'll have options for working with various background types, etc.
-
-EOF
-    exit(0);
+sub forward {
+    my $subref = shift;
+    my $oldframe = $frameno;
+    ++$frameno;
+    safe_exit() if $frameno >= $totalframes;
+    $subref->($oldframe, $frameno);
+}
+sub backward {
+    my $subref = shift;
+    my $oldframe = $frameno;
+    --$frameno;
+    safe_exit() if $frameno < 0;
+    $subref->($oldframe, $frameno);
 }
 
 sub setupterminal {
@@ -205,177 +190,182 @@ sub restoreterminal {
 #    printf "\033[2J\033[?47l"; # Switch back to normal screen (rmcup)
     printf "\033[?25h"; # show the cursor again. (cnorm)
     `stty echo`; # Turn input echo back on.
+}
+
+sub safe_exit {
+    restoreterminal();
     exit 0;
 }
 
 sub displayframe {
-    my $framesref = shift;
-    my $frame = shift;
-    my $cols = shift;
-    my $rows = shift;
-
-    my $line = "";
+    my $oldframe = shift;
+    my $newframe = shift;
     poscursor(1, 1);
-    for ($y = 0; $y < $rows; $y++) {
-        $line = substr($$framesref[$frame][$y], 0, $cols);
-        if ($y + 1 == $rows) {
-            print "$line"; # Don't put a newline on the last line.
-        } else {
-            print "$line\n";
-        }
-    }
+    print join("\n", @{$frames[$newframe]}) if defined $frames[$newframe];
     return 1;
 }
 
 
 
 sub slideright {
-    $framesref = shift;
-    $oldframe = shift;
-    $newframe = shift;
-    $cols = shift;
-    $rows = shift;
-    $timingref = shift;
+    my $oldframe = shift;
+    my $newframe = shift;
 
-    if (defined($$framesref[$newframe])) {
-        my $leftline = "";
-        my $rightline = "";
-        for ($x = 1; $x < $cols; $x++) {
+    if (defined($frames[$newframe])) {
+        my @two_frames = map {
+                $frames[$oldframe][$_] . $frames[$newframe][$_]
+            } (0 .. $rows-1);
+        for my $x (1 .. $cols/$framerate) {
             poscursor(1, 1);
-            for ($y = 0; $y < $rows; $y++) {
-                $leftline = substr($$framesref[$oldframe][$y], $x);
-                $rightline = substr($$framesref[$newframe][$y], 0, $x);
-                if ($y + 1 == $rows) {
-                    print "$leftline$rightline"; # Don't put a newline on the last line.
-                } else {
-                    print "$leftline$rightline\n";
-                }
-            }
-            select(undef,undef, undef, $$timingref[$x]);
+            print join("\n", map {
+                    substr $_, $x*$framerate, $cols;
+                } @two_frames);
+            sleep($timing_scale * (sum @timing[$x .. $x+$framerate-1]));
         }
+        displayframe(undef, $newframe);
     }
     return 1;
 }
 sub slideleft {
-    $framesref = shift;
-    $oldframe = shift;
-    $newframe = shift;
-    $cols = shift;
-    $rows = shift;
-    $timingref = shift;
+    my $oldframe = shift;
+    my $newframe = shift;
 
-    if (defined($$framesref[$oldframe])) {
-        my $leftline = "";
-        my $rightline = "";
-        for ($x = $cols - 1; $x > 0; $x--) {
+    if (defined($frames[$oldframe])) {
+        my @two_frames = map {
+                $frames[$newframe][$_] . $frames[$oldframe][$_]
+            } (0 .. $rows-1);
+        for my $x (reverse 0 .. ($cols-1)/$framerate) {
             poscursor(1, 1);
-            for ($y = 0; $y < $rows; $y++) {
-                $leftline = substr($$framesref[$newframe][$y], $x);
-                $rightline = substr($$framesref[$oldframe][$y], 0, $x);
-                if ($y + 1 == $rows) {
-                    print "$leftline$rightline"; # Don't put a newline on the last line.
-                } else {
-                    print "$leftline$rightline\n";
-                }
-            }
-            select(undef,undef, undef, $$timingref[$x]);
+            print join("\n", map {
+                    substr $_, $x*$framerate, $cols;
+                } @two_frames);
+            sleep($timing_scale * (sum @timing[$x .. $x+$framerate-1]));
         }
+        #Not needed, since we go all the way to 0
+        #displayframe(undef, $newframe);
     }
     return 1;
 }
 
 # These are too slow.
 sub slidelineright {
-    $framesref = shift;
-    $oldframe = shift;
-    $newframe = shift;
-    $cols = shift;
-    $rows = shift;
-    $timingref = shift;
+    my $oldframe = shift;
+    my $newframe = shift;
 
-    if (defined($$framesref[$newframe])) {
-        my $leftline = "";
-        my $rightline = "";
-        for ($y = 0; $y < $rows; $y++) {
-            for ($x = 1; $x <= $cols; $x++) {
-                poscursor(1,$y + 1);
-                $leftline = substr($$framesref[$oldframe][$y], $x);
-                $rightline = substr($$framesref[$newframe][$y], 0, $x);
-                print "$leftline$rightline"; # Don't put a newline on the last line.
-                select(undef,undef,undef, 0.001);
+    if (defined($frames[$newframe])) {
+        my @two_frames = map {
+                $frames[$oldframe][$_] . $frames[$newframe][$_]
+            } (0 .. $rows-1);
+        for my $y (0 .. $rows-1) {
+            poscursor(1,$y + 1);
+            for my $x (1 .. $cols/$framerate) {
+                print substr($two_frames[$y], $x*$framerate, $cols), "\r";
+                sleep($transition_time / ($cols * $rows));
             }
-            unless ($y + 1 == rows) {
+            print $frames[$newframe][$y];
+            unless ($y + 1 == $rows) {
                 print "\n";
             }
-            #select(undef,undef, undef, $$timingref[$y]);
-            select(undef,undef, undef, 0.0001);
         }
     }
     return 1;
 }
 sub slidelineleft {
-    $framesref = shift;
-    $oldframe = shift;
-    $newframe = shift;
-    $cols = shift;
-    $rows = shift;
-    $timingref = shift;
+    my $oldframe = shift;
+    my $newframe = shift;
 
-    if (defined($$framesref[$oldframe])) {
-        my $leftline = "";
-        my $rightline = "";
-        for ($y = 0; $y < $rows; $y++) {
-            for ($x = $cols; $x >= 0; $x--) {
-                poscursor(1,$y + 1);
-                $leftline = substr($$framesref[$newframe][$y], $x);
-                $rightline = substr($$framesref[$oldframe][$y], 0, $x);
-                print "$leftline$rightline"; # Don't put a newline on the last line.
-                select(undef,undef,undef, 0.001);
+    if (defined($frames[$oldframe])) {
+        my @two_frames = map {
+                $frames[$newframe][$_] . $frames[$oldframe][$_]
+            } (0 .. $rows-1);
+        for my $y (0 .. $rows-1) {
+            poscursor(1,$y + 1);
+            for my $x (reverse 0 .. ($cols-1)/$framerate) {
+                print substr($two_frames[$y], $x*$framerate, $cols), "\r";
+                sleep($transition_time / ($cols * $rows));
             }
-            unless ($y + 1 == rows) {
+            #Not needed, since we go all the way to 0
+            #print $frames[$newframe][$y];
+            unless ($y + 1 == $rows) {
                 print "\n";
             }
-            #select(undef,undef, undef, $$timingref[$y]);
-            select(undef,undef, undef, 0.0001);
+        }
+    }
+    return 1;
+}
+
+sub linebyline {
+    my $oldframe = shift;
+    my $newframe = shift;
+
+    if (defined($frames[$newframe] and $newframe >= 0)) {
+        poscursor(1,1);
+        for my $y (0 .. $rows-1) {
+            print $frames[$newframe][$y];
+            unless ($y + 1 == $rows) {
+                print "\n";
+                sleep($transition_time / $rows);
+            }
+        }
+    }
+    return 1;
+}
+
+sub wiperight {
+    my $oldframe = shift;
+    my $newframe = shift;
+
+    if (defined($frames[$newframe])) {
+        my $newlines = $frames[$newframe];
+        for my $x (0 .. $cols/$framerate) {
+            for my $y (1 .. $rows) {
+                poscursor(1+$x*$framerate,$y);
+                print substr($newlines->[$y-1], $x*$framerate, $framerate);
+            }
+            sleep($framerate * $transition_time / $cols);
+        }
+    }
+    return 1;
+}
+sub wipeleft {
+    my $oldframe = shift;
+    my $newframe = shift;
+
+    if (defined($frames[$newframe])) {
+        my $newlines = $frames[$newframe];
+        for my $x (reverse 0 .. $cols/$framerate) {
+            for my $y (1 .. $rows) {
+                poscursor(1+$x*$framerate,$y);
+                print substr($newlines->[$y-1], $x*$framerate, $framerate);
+            }
+            sleep($framerate * $transition_time / $cols);
         }
     }
     return 1;
 }
 
 sub fadeoutfadein {
-    $framesref = shift;
-    $oldframe = shift;
-    $newframe = shift;
-    $cols = shift;
-    $rows = shift;
-    $graydientref = shift;
-    $wait = shift || 0.03;
+    my $oldframe = shift;
+    my $newframe = shift;
 
-    if (defined($$framesref[$newframe])) {
-        foreach my $color (@$graydientref) {
+    if (defined($frames[$newframe])) {
+        my $oldlines = join("\n", @{$frames[$oldframe]});
+        my $newlines = join("\n", @{$frames[$newframe]});
+        for my $color (@graydient) {
+            next if $color % $framerate;
             poscursor(1,1);
-
-            for ($y = 0; $y < $rows; $y++) {
-                print "\033[38;5;${color}m" . $$framesref[$oldframe][$y];
-                unless ($y + 1 == $rows) { 
-                    print "\n";
-                }
-            }
-            select(undef,undef,undef, $wait);
+            print "\033[38;5;${color}m";
+            print $oldlines;
+            sleep($framerate * $transition_time / (2 * @graydient));
         }
-        foreach my $color (reverse @$graydientref) {
+        for my $color (reverse @graydient) {
+            next if $color % $framerate;
             poscursor(1,1);
-
-            for ($y = 0; $y < $rows; $y++) {
-                print "\033[38;5;${color}m" . $$framesref[$newframe][$y];
-                unless ($y + 1 == $rows) { 
-                    print "\n";
-                }
-            }
-            select(undef,undef,undef, $wait);
+            print "\033[38;5;${color}m";
+            print $newlines;
+            sleep($framerate * $transition_time / (2 * @graydient));
         }
-
-
+        print "\033[0m$newlines";
     }
     return 1;
 }
@@ -388,10 +378,80 @@ sub poscursor {
     return 1;
 }
 
+__END__
+=head1 NAME
 
+shellshow - A program to show "slides" in an interesting way inside the terminal
 
+=head1 SYNOPSIS
 
+shellshow I<file1> I<file2> [ I<file3> [ I<file4> [ I<...> ]]]
 
+=head2 Movement/Wipes:
 
+=over
 
+=item B<space>, B<enter>
+
+Move forward a frame in slide motion.
+
+=item B<b>, B<backspace>
+
+Move backward a frame in slide motion.
+
+=item B<l>
+
+Move forward with slideline wipe. (slow)
+
+=item B<k>
+
+Move backward with slideline wipe. (slow)
+
+=item B<f>
+
+Move forward with fadeout/fadein wipe. (req. black bg)
+
+=item B<d>
+
+Move backward with fadeout/fadein wipe. (req. black bg)
+
+=item B<]>
+
+Move forward without transition
+
+=item B<[>
+
+Move backward without transition
+
+=item B<w>
+
+Move forward with horizontal wipe transition
+
+=item B<q>
+
+Move backward with horizontal wipe transition
+
+=item B<.>
+
+Move forward with vertical wipe transition
+
+=item B<,>
+
+Move backward with vertical wipe transition
+
+=back
+
+=head1 DESCRIPTION
+
+Shellshow determines the size of your terminal window and reads in
+files given as args as frames, storing only the part of the file that
+will fit inside the terminal window. You must at least give two filenames
+as arguments. You can use shell glob patterns/wildcards if you want.
+
+=head1 LIMITATIONS
+Right now this program can't handle files with ANSI escapes or multibyte
+characters like UTF-8 or binary characters.
+
+I'd recommend using a black background with white forground text for now.
+Eventually we'll have options for working with various background types, etc.
 

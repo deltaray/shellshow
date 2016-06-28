@@ -49,6 +49,8 @@ change in the future to allow for more wipes.
  * __k__ = Move backward with slideline wipe. (slow)
  * __f__ = Move forward with fadeout/fadein wipe. (req. black bg)
  * __d__ = Move backward with fadeout/fadein wipe. (req. black bg)
+ * __]__ = Move forward without transition
+ * __[__ = Move backward without transition
  
 
 Current issues
